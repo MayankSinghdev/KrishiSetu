@@ -121,10 +121,12 @@ def main() -> None:
     models = {
         "Linear Regression": LinearRegression(),
         "Random Forest": RandomForestRegressor(
-            n_estimators=200,
-            random_state=42,
-            n_jobs=-1,
-        ),
+    n_estimators=40,
+    max_depth=20,
+    min_samples_leaf=2,
+    random_state=42,
+    n_jobs=1,
+),
     }
 
     results = []
