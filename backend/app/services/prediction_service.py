@@ -1,3 +1,4 @@
+from functools import lru_cache
 from pathlib import Path
 
 import joblib
@@ -12,8 +13,9 @@ MODEL_PATH = (
 )
 
 
+@lru_cache(maxsize=1)
 def load_model():
-    """Load the trained crop-yield prediction pipeline."""
+    """Load the trained model once and reuse it."""
 
     if not MODEL_PATH.exists():
         raise FileNotFoundError(
