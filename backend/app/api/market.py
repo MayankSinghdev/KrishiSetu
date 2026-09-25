@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 
 from backend.app.schemas.market import MarketResponse
 from backend.app.services.market_service import get_market_prices
@@ -20,29 +20,20 @@ def market_prices(
     district: str | None = Query(default=None),
     market: str | None = Query(default=None),
 ):
-    """Get mandi prices from the Government OGD API."""
+    """Return live mandi prices or clearly labelled demo data."""
 
-    try:
-        data = get_market_prices(
-            state=state,
-            commodity=commodity,
-            district=district,
-            market=market,
-        )
+    data = get_market_prices(
+        state=state,
+        commodity=commodity,
+        district=district,
+        market=market,
+    )
 
-        records = data.get("records", [])
-
-        return MarketResponse(
-            records=records,
-            total=int(data.get("total", len(records))),
-            message=(
-                "Mandi prices retrieved from the Government "
-                "Open Government Data (OGD) API."
-            ),
-        )
-
-    except Exception as error:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Unable to retrieve market prices: {error}",
-        ) from error
+    return MarketResponse(
+        records=data.get("records", []),
+        total=int(data.get("total", 0)),
+        message=data.get(
+            "message",
+            "Market data is currently unavailable.",
+        ),
+    )

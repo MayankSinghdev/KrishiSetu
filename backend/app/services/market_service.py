@@ -10,14 +10,37 @@ from dotenv import load_dotenv
 
 
 ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
-load_dotenv(ENV_FILE)
-
-DATA_GOV_API_KEY = os.getenv("DATA_GOV_API_KEY")
+load_dotenv(ENV_FILE, override=True)
 
 DATA_GOV_RESOURCE_URL = (
     "https://api.data.gov.in/resource/"
     "9ef84268-d588-465a-a308-a864a43d0070"
 )
+
+# These are invented demonstration values, NOT live mandi prices.
+def _demo_response(state: str, commodity: str) -> dict[str, Any]:
+    record = {
+        "state": state.strip().title(),
+        "district": "Demo District",
+        "market": "Demo Mandi",
+        "commodity": commodity.strip().title(),
+        "variety": "Demo Variety",
+        "grade": "Demo Grade",
+        "arrival_date": "Demo data — not a real arrival date",
+        "min_price": 2000.0,
+        "max_price": 2400.0,
+        "modal_price": 2200.0,
+    }
+
+    return {
+        "records": [record],
+        "total": 1,
+        "message": (
+            "DEMO DATA — These sample values are fictional and are "
+            "NOT live government mandi prices. Live OGD data is "
+            "temporarily unavailable."
+        ),
+    }
 
 
 def get_market_prices(
@@ -26,15 +49,15 @@ def get_market_prices(
     district: str | None = None,
     market: str | None = None,
 ) -> dict[str, Any]:
-    """Fetch mandi prices from the Government OGD API."""
+    """Fetch live mandi prices, falling back to clearly labelled demo data."""
 
-    if not DATA_GOV_API_KEY:
-        raise RuntimeError(
-            "DATA_GOV_API_KEY is not configured in backend/.env"
-        )
+    api_key = os.getenv("DATA_GOV_API_KEY")
+
+    if not api_key:
+        return _demo_response(state, commodity)
 
     params = {
-        "api-key": DATA_GOV_API_KEY,
+        "api-key": api_key,
         "format": "json",
         "limit": "100",
         "filters[state]": state,
@@ -50,52 +73,41 @@ def get_market_prices(
     request_url = f"{DATA_GOV_RESOURCE_URL}?{urlencode(params)}"
 
     try:
-        with urlopen(request_url, timeout=30) as response:
+        with urlopen(request_url, timeout=12) as response:
             response_text = response.read().decode("utf-8")
 
-    except HTTPError as error:
-        raise RuntimeError(
-            f"Government OGD API returned HTTP {error.code}."
-        ) from error
-
-    except URLError as error:
-        raise RuntimeError(
-            f"Unable to reach the Government OGD API: {error.reason}"
-        ) from error
-
-    except TimeoutError as error:
-        raise RuntimeError(
-            "Government OGD API request timed out."
-        ) from error
-
-    try:
         data = json.loads(response_text)
-    except json.JSONDecodeError as error:
-        raise RuntimeError(
-            "Government OGD API returned an invalid JSON response."
-        ) from error
 
-    requested_state = state.strip().casefold()
-    requested_commodity = commodity.strip().casefold()
+        requested_state = state.strip().casefold()
+        requested_commodity = commodity.strip().casefold()
 
-    filtered_records = []
+        records = [
+            record
+            for record in data.get("records", [])
+            if str(record.get("state", "")).strip().casefold()
+            == requested_state
+            and str(record.get("commodity", "")).strip().casefold()
+            == requested_commodity
+        ]
 
-    for record in data.get("records", []):
-        record_state = str(
-            record.get("state", "")
-        ).strip().casefold()
+        return {
+            "records": records,
+            "total": len(records),
+            "message": (
+                "Live mandi prices retrieved from the Government "
+                "Open Government Data (OGD) API."
+                if records
+                else
+                "The live API responded, but no matching records "
+                "were found for the selected state and commodity."
+            ),
+        }
 
-        record_commodity = str(
-            record.get("commodity", "")
-        ).strip().casefold()
+    except HTTPError as error:
+        print(f"OGD API returned HTTP {error.code}; using demo data.")
+    except (URLError, TimeoutError, json.JSONDecodeError) as error:
+        print(f"OGD API unavailable ({type(error).__name__}); using demo data.")
+    except Exception as error:
+        print(f"Unexpected market API error ({type(error).__name__}); using demo data.")
 
-        if (
-            record_state == requested_state
-            and record_commodity == requested_commodity
-        ):
-            filtered_records.append(record)
-
-    data["records"] = filtered_records
-    data["total"] = len(filtered_records)
-
-    return data
+    return _demo_response(state, commodity)
